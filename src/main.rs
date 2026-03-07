@@ -8,12 +8,14 @@ mod env1;
 mod user;
 use tokio::task::JoinHandle;
 use futures::executor::block_on;
+use open;
 
 #[derive(Clone, Debug)]
 pub struct CourseData {
     pub name: String,
     pub latest_assignment: Option<String>,
     pub grade: Option<String>,
+    pub alternate_link: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -25,25 +27,20 @@ pub struct ScheduleEntry {
     pub assignment: String,
 }
 pub fn gradething(grade: i32) -> String {
-    let result: String;
     if grade >= 90 {
-        result = "A".to_string();
+        "A".to_string()
     } else if grade >= 80 {
-        result = "B".to_string();
+        "B".to_string()
     } else if grade >= 60 {
-        result = "C".to_string();
+        "C".to_string()
     } else if grade >= 50 {
-        result = "D".to_string();
-    } else if grade < 50 {
-        result = "F".to_string();
-    } else if grade == "N/A".parse::<i32>().unwrap_or(-1) {
-        result = "N/A".to_string();
-  
+        "D".to_string()
+    } else if grade >= 0 {
+        "F".to_string()
     } else {
-        result = "N/A".to_string();
-    };
-    
-    return result
+        
+        "N/A".to_string()
+    }
 }
 #[tokio::main]
 async fn main() -> eframe::Result<()> {
@@ -481,9 +478,9 @@ impl eframe::App for MyApp {
                             );
                             
                            
-                            let grade_text = course.grade.clone().unwrap_or_else(|| "N/A".to_string());
-                            let grade_result = gradething(grade_text.parse::<i32>().unwrap_or(-1));
-                            let grade_color = match grade_text.as_str() {
+                            let grade_text:i32 = course.grade.clone().unwrap_or_else(|| "-1".to_string()).parse().unwrap_or(-1);
+                            let grade_result = gradething(grade_text);
+                            let grade_color = match grade_result.as_str() {
                                 "A" | "A+" => Color32::from_rgb(34, 177, 76),
                                 "B" | "B+" => Color32::from_rgb(52, 152, 219),
                                 "C" | "C+" => Color32::from_rgb(241, 196, 15),
@@ -493,7 +490,7 @@ impl eframe::App for MyApp {
                             };
                             
                             let grade_button = egui::Button::new(
-                                RichText::new(&grade_text)
+                                RichText::new(&grade_result)
                                     .size(32.0)
                                     .strong()
                                     .color(Color32::WHITE),
@@ -602,7 +599,7 @@ impl eframe::App for MyApp {
                             ui.add_space(12.0);
                             ui.separator();
                             ui.add_space(12.0);
-                            
+                             
                             match self.course_tabs[i] {
                                 0 => {
                                     ui.label(
@@ -621,6 +618,22 @@ impl eframe::App for MyApp {
                                 _ => {}
                             }
                             ui.add_space(12.0);
+                            if let Some(url) = &course.alternate_link {
+                              let open_button = egui::Button::new(
+                                  RichText::new("🌐 Open in Classroom")
+                                       .size(14.0)
+                                       .strong()
+                                       .color(Color32::WHITE),
+                                         )
+                                       .fill(Color32::from_rgb(52, 152, 219))
+                                       .min_size(Vec2::new(180.0, 35.0));
+
+                                       if ui.add(open_button).clicked() {
+                                        let _ = open::that(url);
+                                         }
+
+                                   ui.add_space(12.0);
+                            }
                         }
                         );
                         ui.add_space(15.0);

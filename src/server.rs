@@ -34,6 +34,8 @@ struct Course {
     name: String,
     room: Option<String>,
     section: Option<String>,
+     #[serde(rename = "alternateLink")]
+    alternate_link: Option<String>, 
 }
 
 #[derive(Debug, Deserialize)]
@@ -55,7 +57,13 @@ struct UserProfile {
     name: Option<String>,
     email_address: Option<String>,
 }
-
+#[derive(Debug, Deserialize)]
+struct StudentSubmission {
+    id: String,
+    course_work_id: String,
+    state: Option<String>,
+    assigned_grade: Option<f64>, // god help us debug this
+}
 use crate::ScheduleEntry;
 
 pub async fn func() -> anyhow::Result<MyApp> {
@@ -79,6 +87,10 @@ pub async fn func() -> anyhow::Result<MyApp> {
         ))
         .add_scope(Scope::new(
             "https://www.googleapis.com/auth/classroom.coursework.me.readonly".to_string(),
+        ))
+    
+          .add_scope(Scope::new(
+            "https://www.googleapis.com/auth/classroom.student-submissions.me.readonly".to_string(),
         ))
         .url();
 
@@ -251,40 +263,76 @@ pub async fn func() -> anyhow::Result<MyApp> {
     
     let mut course_list: Vec<CourseData> = Vec::new();
 
-    for course in &parsed.courses {
-        
-        let mut latest_assignment: Option<String> = None;
-        let cw_resp = http_client
-            .get(format!(
-                "https://classroom.googleapis.com/v1/courses/{}/courseWork",
-                course.id
-            ))
-            .bearer_auth(&access_token)
-            .send()
-            .await
-            .map_err(|e| anyhow::anyhow!("coursework request failed: {}", e))?;
-        if cw_resp.status().is_success() {
-            let cw_body = cw_resp.text().await?;
-            if let Ok(cw_parsed) = serde_json::from_str::<CourseworkResponse>(&cw_body) {
-                if let Some(first) = cw_parsed.course_work.first() {
-                    latest_assignment = first
-                        .title
-                        .clone()
-                        .or_else(|| first.description.clone());
+   for course in &parsed.courses {
+    let mut latest_assignment: Option<String> = None;
+    let mut latest_grade: Option<f64> = None;
+
+    // Fetch coursework for this course
+    let cw_resp = http_client
+        .get(format!(
+            "https://classroom.googleapis.com/v1/courses/{}/courseWork",
+            course.id
+        ))
+        .bearer_auth(&access_token)
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("coursework request failed: {}", e))?;
+
+    if cw_resp.status().is_success() {
+        let cw_body = cw_resp.text().await?;
+        if let Ok(cw_parsed) = serde_json::from_str::<CourseworkResponse>(&cw_body) {
+            
+            // Optional: pick the first assignment as "latest"
+            if let Some(first) = cw_parsed.course_work.first() {
+                latest_assignment = first.title.clone().or_else(|| first.description.clone());
+            }
+
+            // Fetch the student's submission for each coursework to get the grade
+            for cw in &cw_parsed.course_work {
+                let sub_resp = http_client
+                    .get(format!(
+                        "https://classroom.googleapis.com/v1/courses/{}/courseWork/{}/studentSubmissions/me",
+                        course.id,
+                        cw.id
+                    ))
+                    .bearer_auth(&access_token)
+                    .send()
+                    .await
+                    .map_err(|e| anyhow::anyhow!("student submission request failed: {}", e))?;
+
+                if sub_resp.status().is_success() {
+                    let sub_body = sub_resp.text().await?;
+                    if let Ok(submission) = serde_json::from_str::<StudentSubmission>(&sub_body) {
+                        // Assign the grade from the first available submission
+                        latest_grade = submission.assigned_grade;
+                        break; // remove break if you want to check all assignments
+                    }
+                } else {
+                    let status = sub_resp.status();
+                    let body = sub_resp.text().await.unwrap_or_default();
+                    eprintln!(
+                        "Error fetching submission for {}: {}\n{}",
+                        cw.title.clone().unwrap_or_default(),
+                        status,
+                        body
+                    );
                 }
             }
-        } else {
-            let status = cw_resp.status();
-            let body = cw_resp.text().await.unwrap_or_default();
-            eprintln!("Error fetching coursework for {}: {}\n{}", course.name, status, body);
         }
-
-        course_list.push(CourseData {
-            name: course.name.clone(),
-            latest_assignment,
-            grade: None, 
-        });
+    } else {
+        let status = cw_resp.status();
+        let body = cw_resp.text().await.unwrap_or_default();
+        eprintln!("Error fetching coursework for {}: {}\n{}", course.name, status, body);
     }
+    
+    
+    course_list.push(CourseData {
+        name: course.name.clone(),
+        latest_assignment,
+        grade: latest_grade.map(|g| g.to_string()),
+        alternate_link: course.alternate_link.clone(),
+    });
+}
 
     Ok(MyApp {
         state: "login".to_string(),
