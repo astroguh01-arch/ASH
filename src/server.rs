@@ -329,7 +329,7 @@ pub async fn func() -> anyhow::Result<MyApp> {
     course_list.push(CourseData {
         name: course.name.clone(),
         latest_assignment,
-        grade: latest_grade.map(|g| g.to_string()),
+        grade: latest_grade.map(|g| g.to_string()), // tends to error when fetching grade for assignment due to google api
         alternate_link: course.alternate_link.clone(),
     });
 }
