@@ -291,6 +291,7 @@ pub async fn func() -> anyhow::Result<MyApp> {
         courses: course_list,
         course_tabs: Vec::new(),
         texture: None,
+        pending: None,
         current_user_id: user_id,
         schedule_entries,
         schedule_form_day: 0,
@@ -298,6 +299,8 @@ pub async fn func() -> anyhow::Result<MyApp> {
         schedule_form_minute: "00".to_string(),
         schedule_form_course: 0,
         schedule_form_assignment: String::new(),
+        rx: None,
+        tx: None,
     })
 }
 

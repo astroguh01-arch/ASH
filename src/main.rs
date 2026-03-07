@@ -1,11 +1,13 @@
 use std::vec;
+use futures::TryFutureExt;
 use image::GenericImageView;
 use eframe::egui::{ColorImage, TextureHandle, Color32, RichText, Vec2};
 use eframe::egui;
 mod server;
 mod env1;
 mod user;
-
+use tokio::task::JoinHandle;
+use futures::executor::block_on;
 
 #[derive(Clone, Debug)]
 pub struct CourseData {
@@ -22,8 +24,29 @@ pub struct ScheduleEntry {
     pub course: String,
     pub assignment: String,
 }
-
-fn main() -> eframe::Result<()> {
+pub fn gradething(grade: i32) -> String {
+    let result: String;
+    if grade >= 90 {
+        result = "A".to_string();
+    } else if grade >= 80 {
+        result = "B".to_string();
+    } else if grade >= 60 {
+        result = "C".to_string();
+    } else if grade >= 50 {
+        result = "D".to_string();
+    } else if grade < 50 {
+        result = "F".to_string();
+    } else if grade == "N/A".parse::<i32>().unwrap_or(-1) {
+        result = "N/A".to_string();
+  
+    } else {
+        result = "N/A".to_string();
+    };
+    
+    return result
+}
+#[tokio::main]
+async fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         ..Default::default()
     };
@@ -41,6 +64,7 @@ struct MyApp {
     state: String,
     courses: Vec<CourseData>,
     course_tabs: Vec<usize>,
+    pending: Option<JoinHandle<()>>,
     texture: Option<TextureHandle>,
     current_user_id: String,
     schedule_entries: Vec<ScheduleEntry>,
@@ -50,6 +74,9 @@ struct MyApp {
     schedule_form_minute: String,
     schedule_form_course: usize,
     schedule_form_assignment: String,
+
+    rx: Option<tokio::sync::mpsc::Receiver<MyApp>>, 
+    tx: Option<tokio::sync::mpsc::Sender<MyApp>>,   
 }
 
 impl MyApp {
@@ -79,6 +106,7 @@ impl Default for MyApp {
             state: "login".to_string(),
             courses: Vec::new(),
             course_tabs: Vec::new(),
+            pending: None,
             texture: None,
             current_user_id: String::new(),
             schedule_entries: Vec::new(),
@@ -87,6 +115,8 @@ impl Default for MyApp {
             schedule_form_minute: "00".to_string(),
             schedule_form_course: 0,
             schedule_form_assignment: String::new(),
+            rx: None,
+            tx: None,
         }
     }
 }
@@ -150,27 +180,69 @@ impl eframe::App for MyApp {
         .fill(Color32::from_rgb(70, 100, 200))
         .min_size(Vec2::new(200.0, 50.0));
 
-        if ui.add(login_button).clicked() {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .unwrap();
-            let a = rt.block_on(server::func()).unwrap();
-           
-            self.courses = a.courses;
-            self.course_tabs = vec![0; self.courses.len()];
-            self.state = "Main".to_string();
-        }
-        
+     if ui.add(login_button).clicked() {
+   self.state = "loading".to_string();
+   
+ if self.tx.is_none() {
+    let (tx, rx) = tokio::sync::mpsc::channel(1);
+    self.tx = Some(tx.clone());
+    self.rx = Some(rx);
+} 
+    let tx = self.tx.as_ref().unwrap().clone();
+    self.pending = Some(tokio::spawn(async move {
+       let data = server::func().await.unwrap();
+     
+       let _ = tx.send(data).await;
+      
+    }));
+   
+ 
+}
+
+
+
         ui.add_space(20.0);
 
       
       
     });
-  
+   
+
       
                 
         }
+     if self.state == "loading" {
+   
+
+   
+        ui.heading(
+            RichText::new("Authenticating (Must Have Google Classroom)...")
+                .size(24.0)
+                .strong()
+                .color(Color32::BLACK),
+        );
+    
+
+
+
+    
+   
+}
+    if let Some(rx) = &mut self.rx {
+     match rx.try_recv() {
+        Ok(result) => {
+            println!("Data received from async task!");
+            self.courses = result.courses;
+            self.course_tabs = vec![0; self.courses.len()];
+            self.state = "Main".to_string();
+            self.pending = None;
+            ctx.request_repaint();
+        }
+        Err(_) => {
+            // No data buddy
+        }
+    }
+}
             if self.state == "Schedule" {
              
                 ui.horizontal(|ui| {
@@ -408,8 +480,9 @@ impl eframe::App for MyApp {
                                     .color(Color32::from_rgb(80, 80, 80)),
                             );
                             
-                       
+                           
                             let grade_text = course.grade.clone().unwrap_or_else(|| "N/A".to_string());
+                            let grade_result = gradething(grade_text.parse::<i32>().unwrap_or(-1));
                             let grade_color = match grade_text.as_str() {
                                 "A" | "A+" => Color32::from_rgb(34, 177, 76),
                                 "B" | "B+" => Color32::from_rgb(52, 152, 219),
