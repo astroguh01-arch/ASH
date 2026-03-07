@@ -267,7 +267,7 @@ pub async fn func() -> anyhow::Result<MyApp> {
     let mut latest_assignment: Option<String> = None;
     let mut latest_grade: Option<f64> = None;
 
-    // Fetch coursework for this course
+   
     let cw_resp = http_client
         .get(format!(
             "https://classroom.googleapis.com/v1/courses/{}/courseWork",
@@ -282,12 +282,12 @@ pub async fn func() -> anyhow::Result<MyApp> {
         let cw_body = cw_resp.text().await?;
         if let Ok(cw_parsed) = serde_json::from_str::<CourseworkResponse>(&cw_body) {
             
-            // Optional: pick the first assignment as "latest"
+           
             if let Some(first) = cw_parsed.course_work.first() {
                 latest_assignment = first.title.clone().or_else(|| first.description.clone());
             }
 
-            // Fetch the student's submission for each coursework to get the grade
+            
             for cw in &cw_parsed.course_work {
                 let sub_resp = http_client
                     .get(format!(
@@ -303,9 +303,9 @@ pub async fn func() -> anyhow::Result<MyApp> {
                 if sub_resp.status().is_success() {
                     let sub_body = sub_resp.text().await?;
                     if let Ok(submission) = serde_json::from_str::<StudentSubmission>(&sub_body) {
-                        // Assign the grade from the first available submission
+                        
                         latest_grade = submission.assigned_grade;
-                        break; // remove break if you want to check all assignments
+                        break; 
                     }
                 } else {
                     let status = sub_resp.status();
