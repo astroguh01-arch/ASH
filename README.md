@@ -5,3 +5,4 @@ A.S.H е приложение, създадено да повиши продук
 - Windows 10+
 - 64 bit
 - Google Classroom courses
+- Internet
